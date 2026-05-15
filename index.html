@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chatly Elite Ultimate</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        :root { --bg: #e5ddd5; --head: #075e54; --text: #000; --msg-in: #ffffff; --msg-out: #d9fdd3; --accent: #25d366; }
+        .theme-dark { --bg: #0b141a; --head: #202c33; --text: #fff; --msg-in: #202c33; --msg-out: #005c4b; }
+        .theme-night { --bg: #000; --head: #111; --text: #00ff00; --msg-in: #111; --msg-out: #222; }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; transition: 0.2s; }
+        body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+        .screen { display: none; height: 100vh; flex-direction: column; }
+        .active-screen { display: flex; }
+        .header { background: var(--head); color: white; padding: 15px; display: flex; align-items: center; gap: 10px; z-index: 10; }
+        
+        #chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 15px; position: relative; box-shadow: 0 1px 1px rgba(0,0,0,0.1); cursor: pointer; word-wrap: break-word; }
+        .msg-in { align-self: flex-start; background: var(--msg-in); }
+        .msg-out { align-self: flex-end; background: var(--msg-out); }
+        .msg img { max-width: 100%; border-radius: 8px; margin-top: 5px; display: block; }
+        
+        .room-item { background: var(--msg-in); margin: 5px 10px; padding: 12px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; color: var(--text); }
+        .room-info { display: flex; align-items: center; gap: 12px; flex: 1; }
+        .room-icon { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+        .btn-del-chat { color: #ff5252; font-size: 20px; padding: 5px 10px; font-weight: bold; }
+        
+        .reply-box { font-size: 12px; background: rgba(0,0,0,0.1); padding: 5px; border-left: 3px solid var(--accent); border-radius: 4px; margin-bottom: 5px; }
+        .reply-preview { display: none; background: var(--msg-in); padding: 10px; border-top: 1px solid #ccc; font-size: 13px; position: relative; }
+        
+        .status-text { font-size: 11px; opacity: 0.8; font-style: italic; }
+        .ticks { font-size: 11px; float: right; margin-left: 5px; opacity: 0.6; }
+        .input-panel { display: flex; padding: 10px; background: rgba(0,0,0,0.05); align-items: center; gap: 8px; }
+        .btn-icon { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--head); }
+        .btn-exit { background: #ff5252; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 11px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body class="theme-light" id="body-tag">
+
+<div id="screen-login" class="screen" style="justify-content:center; align-items:center; background:#075e54; color:white;">
+    <h2>Chatly Elite</h2>
+    <input type="text" id="login-nick" placeholder="Ваш ник" style="margin-top:20px; padding:12px; width:80%; border-radius:10px; border:none;">
+    <input type="password" id="login-pass" placeholder="Пароль" style="margin:10px 0; padding:12px; width:80%; border-radius:10px; border:none;">
+    <button onclick="app.auth()" style="padding:15px 50px; border-radius:10px; background:#25d366; color:white; border:none; font-weight:bold;">ВОЙТИ</button>
+</div>
+
+<div id="screen-menu" class="screen">
+    <div class="header"><h3>chatly</h3> <button onclick="app.searchHandler()" class="btn-icon" style="color:white">🔍</button> <button onclick="app.showScreen('screen-settings')" class="btn-icon" style="color:white">⚙️</button></div>
+    <div id="total-online" style="font-size:12px; padding:5px 15px; opacity:0.7;">В сети: 0</div>
+    <div id="rooms-list" style="overflow-y:auto; padding-top:10px;">
+        <div id="room-news_channel" class="room-item" onclick="app.openChat('news_channel', '📢 Новости')">
+            <div class="room-info"><span>📢 Новости</span></div>
+        </div>
+        <div id="room-main" class="room-item" onclick="app.openChat('main', '🏠 Главный чат')">
+            <div class="room-info"><span>🏠 Главный чат</span></div>
+        </div>
+        <div id="room-vip" class="room-item" style="border:2px solid gold; display:none" onclick="app.openChat('vip', '👑 VIP Клуб')">
+            <div class="room-info"><span>👑 VIP Клуб</span></div>
+        </div>
+        <div id="room-dark_zone" class="room-item" style="display:none; background:#1a1a1a; color:white;" onclick="app.openChat('dark_zone', '🔞 Чат без правил')">
+            <div class="room-info"><span>🔞 Чат без правил</span></div>
+        </div>
+        <div style="padding:10px; font-size:11px; opacity:0.5;">ДИАЛОГИ</div>
+        <div id="private-list"></div>
+    </div>
+</div>
+
+<div id="screen-chat" class="screen">
+    <div class="header">
+        <button onclick="app.showScreen('screen-menu')" class="btn-icon" style="color:white">⬅</button> 
+        <img id="chat-avatar-view" src="" style="width:36px; height:36px; border-radius:50%; background:#eee;">
+        <div style="flex:1"><div id="chat-title" style="font-weight:bold; font-size:15px;">Чат</div><div id="chat-status" class="status-text"></div></div>
+        <button id="btn-exit-secret" class="btn-exit" style="display:none" onclick="app.exitSecret()">ВЫЙТИ</button>
+        <button id="admin-av-btn" onclick="document.getElementById('chat-av-input').click()" style="display:none" class="btn-icon">🖼️</button>
+        <input type="file" id="chat-av-input" style="display:none" onchange="app.uploadChatAvatar(this)">
+    </div>
+    <div id="chat-messages"></div>
+    <div id="reply-preview" class="reply-preview"><div id="reply-text" style="opacity:0.7; font-size:11px;"></div><button onclick="app.cancelReply()" style="position:absolute; right:10px; top:5px; background:none; border:none; font-weight:bold;">✕</button></div>
+    <div class="input-panel" id="chat-input-area">
+        <button onclick="document.getElementById('img-input').click()" class="btn-icon">📷</button>
+        <input type="file" id="img-input" style="display:none" accept="image/*" onchange="app.sendImage(this)">
+        <input type="text" id="msg-input" placeholder="Сообщение..." style="flex:1; padding:10px; border-radius:20px; border:none; outline:none;">
+        <button onclick="app.sendMessage()" class="btn-icon">➤</button>
+    </div>
+</div>
+
+<div id="screen-settings" class="screen">
+    <div class="header"><button onclick="app.showScreen('screen-menu')" class="btn-icon" style="color:white">⬅</button> <h3>Настройки</h3></div>
+    <div style="padding:20px; text-align:center;">
+        <img id="preview-avatar" src="" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:2px solid var(--head);" onclick="document.getElementById('file-input').click()">
+        <input type="file" id="file-input" style="display:none" onchange="app.uploadAvatar(this)">
+        <h2 id="my-nick-label"></h2>
+        <input type="text" id="my-bio" placeholder="О себе..." onchange="app.updateBio()" style="width:100%; padding:10px; margin:10px 0; border-radius:10px; border:1px solid #ccc;">
+        <div style="background: gold; padding: 12px; border-radius: 10px; margin-bottom: 20px; color: #000; font-weight: bold; font-size: 13px;">По поводу покупки Золотого Членства пишите: user</div>
+        <p style="margin-bottom: 8px;">Выберите тему:</p>
+        <div style="display:flex; gap:5px; margin-bottom:20px;">
+            <button onclick="app.setTheme('light')" style="flex:1; padding:10px; border-radius:8px;">День</button>
+            <button onclick="app.setTheme('dark')" style="flex:1; padding:10px; border-radius:8px; background:#202c33; color:#fff;">Ночь</button>
+            <button onclick="app.setTheme('night')" style="flex:1; padding:10px; border-radius:8px; background:#000; color:#0f0;">Matrix</button>
+        </div>
+        <button id="admin-db-btn" onclick="app.showDB()" style="display:none; width:100%; padding:12px; background:orange; border:none; border-radius:10px; margin-bottom:10px;">БАЗА ДАННЫХ</button>
+        <button onclick="app.logout()" style="width:100%; padding:15px; background:#ff5252; color:white; border:none; border-radius:12px;">ВЫЙТИ</button>
+    </div>
+</div>
+
+<script>
+const app = {
+    config: { apiKey: "AIzaSyD0-CvkWIGPSb-cOQTJEd_S7u8lcBQyu4c", authDomain: "chatly-d7452.firebaseapp.com", projectId: "chatly-d7452", databaseURL: "https://chatly-d7452-default-rtdb.firebaseio.com/" },
+    myNick: "", currentRoom: "", targetUser: "", allVips: {}, replyData: null,
+    notifSound: new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3'),
+
+    init() {
+        firebase.initializeApp(this.config); this.db = firebase.database();
+        const n = localStorage.getItem('chat_n');
+        this.setTheme(localStorage.getItem('chat_theme') || 'light');
+        if(n) { this.myNick = n; this.goOnline(); this.showScreen('screen-menu'); this.loadUser(); this.syncIcons(); } 
+        else { this.showScreen('screen-login'); }
+    },
+
+    goOnline() {
+        const r = this.db.ref('status/' + this.myNick); r.set(true); r.onDisconnect().remove();
+        this.db.ref('status').on('value', s => document.getElementById('total-online').innerText = "В сети: " + s.numChildren());
+    },
+
+    auth() {
+        const n = document.getElementById('login-nick').value.trim();
+        const p = document.getElementById('login-pass').value.trim();
+        if(n && p.length >= 2) {
+            this.db.ref('users/'+n).once('value', s => {
+                if(s.exists() && String(s.val().pass) !== String(p)) return alert("Неверный пароль!");
+                if(!s.exists()) this.db.ref('users/'+n).set({pass:p, reg:Date.now()});
+                localStorage.setItem('chat_n', n); location.reload();
+            });
+        }
+    },
+
+    loadUser() {
+        document.getElementById('my-nick-label').innerText = this.myNick;
+        if(this.myNick === 'user') document.getElementById('admin-db-btn').style.display = 'block';
+        this.db.ref('premium').on('value', s => { this.allVips = s.val() || {}; this.updateVipUI(); });
+        this.db.ref('users/'+this.myNick+'/avatar').on('value', s => document.getElementById('preview-avatar').src = s.val() || 'https://cdn-icons-png.flaticon.com/512/149/149071.png');
+        this.db.ref('privates/'+this.myNick).on('value', s => {
+            const list = document.getElementById('private-list'); list.innerHTML = "";
+            s.forEach(c => {
+                const div = document.createElement('div'); div.className = "room-item";
+                div.innerHTML = `
+                    <div class="room-info" onclick="app.startPrivateChat('${c.key}')">
+                        <span>👤 ${c.key}</span>
+                    </div>
+                    <div class="btn-del-chat" onclick="app.deletePrivate('${c.key}')">×</div>
+                `;
+                list.appendChild(div);
+            });
+        });
+        if(localStorage.getItem('secret_unlocked')) document.getElementById('room-dark_zone').style.display = 'flex';
+    },
+
+    startPrivateChat(nick) {
+        this.targetUser = nick;
+        this.openChat('p2p_'+[this.myNick, nick].sort().join('_'), 'Чат: '+nick);
+    },
+
+    deletePrivate(nick) {
+        if(confirm("Удалить чат с " + nick + " из списка?")) {
+            this.db.ref('privates/'+this.myNick+'/'+nick).remove();
+        }
+    },
+
+    updateVipUI() {
+        const isVip = (this.allVips[this.myNick] > Date.now()) || this.myNick === 'user';
+        document.getElementById('room-vip').style.display = isVip ? 'flex' : 'none';
+    },
+
+    openChat(id, title) {
+        this.currentRoom = id; this.cancelReply();
+        document.getElementById('chat-title').innerText = title;
+        document.getElementById('chat-messages').innerHTML = "";
+        const isP2P = id.startsWith('p2p_');
+        document.getElementById('admin-av-btn').style.display = (this.myNick === 'user' && !isP2P) ? 'block' : 'none';
+        document.getElementById('btn-exit-secret').style.display = (id === 'dark_zone') ? 'inline-block' : 'none';
+        
+        if(isP2P) {
+            this.db.ref('users/'+this.targetUser+'/bio').once('value', s => document.getElementById('chat-status').innerText = s.val() || "");
+            this.db.ref('msgs/'+id).once('value', s => { s.forEach(m => { if(m.val().sender !== this.myNick) this.db.ref('msgs/'+id+'/'+m.key+'/read').set(true); }); });
+        } else { document.getElementById('chat-status').innerText = ""; }
+        
+        document.getElementById('chat-input-area').style.display = (id !== 'news_channel' || this.myNick === 'user') ? 'flex' : 'none';
+        this.db.ref('room_data/'+id+'/icon').once('value', s => document.getElementById('chat-avatar-view').src = s.val() || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png');
+        this.showScreen('screen-chat');
+        const ref = this.db.ref('msgs/'+id); ref.off();
+        ref.on('child_added', s => { this.renderMsg(s.key, s.val()); if(s.val().sender !== this.myNick) this.notifSound.play(); });
+        ref.on('child_removed', s => { const el = document.getElementById('msg-'+s.key); if(el) el.remove(); });
+    },
+
+    exitSecret() {
+        if(confirm("Скрыть секретный чат?")) { localStorage.removeItem('secret_unlocked'); this.showScreen('screen-menu'); document.getElementById('room-dark_zone').style.display = 'none'; }
+    },
+
+    renderMsg(key, d) {
+        const b = document.getElementById('chat-messages');
+        if(document.getElementById('msg-'+key)) return;
+        const div = document.createElement('div'); div.id = 'msg-'+key;
+        div.className = `msg ${d.sender === this.myNick ? 'msg-out' : 'msg-in'}`;
+        let content = d.text ? d.text : (d.img ? `<img src="${d.img}">` : '');
+        let replyHtml = d.replyTo ? `<div class="reply-box"><b>${d.replyTo.who}:</b> ${d.replyTo.txt}</div>` : '';
+        let crown = (this.allVips[d.sender] > Date.now() || d.sender === 'user') ? '👑' : '';
+        let ticks = d.sender === this.myNick ? `<span class="ticks">${d.read ? '✔✔' : '✔'}</span>` : '';
+        div.innerHTML = `${replyHtml}<small style="font-weight:bold; color:var(--head);">${d.sender}${crown}</small><br>${content}${ticks}`;
+        div.onclick = () => {
+            const act = prompt("1. Ответить\n2. Удалить ДЛЯ ВСЕХ\n3. Отмена", "1");
+            if(act === "1") { this.replyData = { who: d.sender, txt: d.text || "Изображение" }; document.getElementById('reply-preview').style.display = 'block'; document.getElementById('reply-text').innerText = d.sender + ": " + (d.text || "Медиа"); }
+            else if (act === "2") { if(d.sender === this.myNick || this.myNick === 'user') this.db.ref('msgs/'+this.currentRoom+'/'+key).remove(); else alert("Нельзя!"); }
+        };
+        b.appendChild(div); b.scrollTop = b.scrollHeight;
+    },
+
+    sendMessage() { const i = document.getElementById('msg-input'); if(!i.value.trim()) return; this.pushMsg({ text: i.value }); i.value = ""; },
+    sendImage(input) { const f = input.files[0]; if(!f) return; const r = new FileReader(); r.onload=(e)=>this.pushMsg({ img: e.target.result }); r.readAsDataURL(f); },
+    pushMsg(data) { const msg = { ...data, sender: this.myNick, time: Date.now(), read: false }; if(this.replyData) msg.replyTo = this.replyData; this.db.ref('msgs/'+this.currentRoom).push(msg); this.cancelReply(); },
+    cancelReply() { this.replyData = null; document.getElementById('reply-preview').style.display = 'none'; },
+    setTheme(t) { document.getElementById('body-tag').className = 'theme-' + t; localStorage.setItem('chat_theme', t); },
+    updateBio() { this.db.ref('users/'+this.myNick+'/bio').set(document.getElementById('my-bio').value); },
+    uploadAvatar(i) { const f = i.files[0]; if(!f) return; const r = new FileReader(); r.onload=(e)=>this.db.ref('users/'+this.myNick+'/avatar').set(e.target.result); r.readAsDataURL(f); },
+    uploadChatAvatar(i) { const f = i.files[0]; if(!f) return; const r = new FileReader(); r.onload=(e)=>this.db.ref('room_data/'+this.currentRoom+'/icon').set(e.target.result); r.readAsDataURL(f); },
+    syncIcons() { ['news_channel', 'main', 'vip', 'dark_zone'].forEach(rid => { this.db.ref('room_data/'+rid+'/icon').on('value', s => { const el = document.getElementById('room-'+rid); if(el) { let title = el.querySelector('span').innerText; el.innerHTML = `<div class="room-info"><img src="${s.val() || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'}" class="room-icon"><span>${title}</span></div>`; } }); }); },
+    showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen')); document.getElementById(id).classList.add('active-screen'); },
+    logout() { this.db.ref('status/'+this.myNick).remove(); localStorage.clear(); location.reload(); },
+    showDB() { this.db.ref('users').once('value', us => { this.db.ref('status').once('value', st => { let r = "БАЗА:\n"; const on = st.val()||{}; us.forEach(u => { r += `${u.key}:${u.val().pass} [${on[u.key]?'ON':'OFF'}]\n`; }); alert(r); }); }); },
+    searchHandler() { const q = prompt("Ник:"); if(q === 'порно1488') { localStorage.setItem('secret_unlocked', 'true'); location.reload(); } else if(q) { this.db.ref('users/'+q).once('value', s => { if(s.exists()){ this.db.ref('privates/'+this.myNick+'/'+q).set(true); this.db.ref('privates/'+q+'/'+this.myNick).set(true); } }); } }
+};
+app.init();
+</script>
+</body>
+</html>
